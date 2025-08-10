@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Grocery Tracker</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <meta name="theme-color" content="#3498db"/>
+
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+      background-color: #f4f7f9;
+      color: #333;
+      margin: 0;
+      padding: 20px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      background: #fff;
+      padding: 20px 30px;
+      border-radius: 8px;
+      box-shadow: 0 4px 6px rgba(0,0,0,.1);
+    }
+    h1, h2 { color: #2c3e50; text-align: center; }
+    h2 { margin-top: 30px; padding-top: 20px; border-top: 2px solid #ccc; }
+    form {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 20px;
+      align-items: end;
+    }
+    input, select {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      box-sizing: border-box;
+    }
+    button {
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      background-color: #3498db;
+      color: #fff;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background-color .3s;
+    }
+    button:hover { background-color: #2980b9; }
+    .controls { display: flex; justify-content: flex-end; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { text-align: left; padding: 12px; border-bottom: 1px solid #ddd; }
+    th { background-color: #ecf0f1; }
+    tbody tr:hover { background-color: #f7f9fb; }
+    .transaction-header { background-color: #e8f5e9; font-weight: bold; cursor: pointer; }
+    .item-row { display: none; }
+    .report-section { margin-top: 30px; border-top: 2px solid #ccc; padding-top: 20px; }
+    #priceHistory { margin-top: 20px; background: #f9f9f9; padding: 15px; border-radius: 4px; display: none; }
+    .hidden { display: none; }
+    .item-pill { display: inline-block; margin-right: 8px; padding: 4px 8px; background:#eef5ff; border-radius: 999px; font-size: 12px; }
+    .subtle { color:#666; font-size: 12px; }
+    .scroll-x { overflow:auto; }
+    .inline-controls { display:flex; gap:12px; align-items:center; flex-wrap:wrap; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🛒 Grocery Tracker</h1>
+
+    <div id="transaction-form-section">
+      <h2>Add a New Shopping List</h2>
+      <form id="transactionForm">
+        <div>
+          <label for="store">Store</label>
+          <input type="text" id="store" name="store" list="stores-list" required>
+          <datalist id="stores-list"></datalist>
+        </div>
+        <div>
+          <label for="transactionDate">Date</label>
+          <input type="date" id="transactionDate" name="date" required>
+        </div>
+        <div>
+          <label for="paymentMethod">Payment</label>
+          <input type="text" id="paymentMethod" name="paymentMethod" list="payments-list" required>
+          <datalist id="payments-list"></datalist>
+        </div>
+        <button type="submit">Add Shopping List</button>
+      </form>
+    </div>
+
+    <div id="item-form-section" class="hidden">
+      <h2>Add Items to <span id="current-transaction-display"></span></h2>
+      <form id="itemForm">
+        <div>
+          <label for="item">Item</label>
+          <input type="text" id="item" name="item" required>
+        </div>
+        <div>
+          <label for="brand">Brand</label>
+          <input type="text" id="brand" name="brand" list="brands-list" required>
+          <datalist id="brands-list"></datalist>
+        </div>
+        <div>
+          <label for="category">Category</label>
+          <input type="text" id="category" name="category" list="categories-list" required>
+          <datalist id="categories-list"></datalist>
+        </div>
+        <div>
+          <label for="size">Size</label>
+          <input type="text" id="size" name="size" placeholder="e.g., 22oz" required>
+        </div>
+        <div>
+          <label for="price">Price</label>
+          <input type="number" id="price" name="price" step="0.01" required>
+        </div>
+        <button type="submit">Add Item</button>
+      </form>
+      <div class="controls">
+        <button type="button" id="finishBtn">Finish Shopping</button>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button type="button" id="exportBtn">Export Data (JSON)</button>
+      <input type="file" id="importFile" accept=".json" style="display:none;">
+      <button type="button" id="importBtn">Import Data</button>
+      <button type="button" id="backupBtn" title="Automatically save to a chosen file">Choose Backup File</button>
+      <span id="backupStatus" class="subtle" aria-live="polite"></span>
+    </div>
+
+    <div class="report-section">
+      <h2>All Transactions</h2>
+      <div class="subtle">Tip: click a row to expand/collapse its items.</div>
+      <table id="groceryTable">
+        <thead>
+          <tr>
+            <th data-sort-by="store">Store</th>
+            <th data-sort-by="date">Date</th>
+            <th data-sort-by="paymentMethod">Payment</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="report-section" id="priceHistory">
+      <h2>Price History for <span id="historyItemName"></span></h2>
+      <ul id="historyList"></ul>
+    </div>
+
+    <div class="report-section">
+      <h2>Spending Summary</h2>
+      <p><strong>Total Spending This Month:</strong> <span id="monthlyTotal">$0.00</span></p>
+      <p><strong>Total Spending This Year:</strong> <span id="yearlyTotal">$0.00</span></p>
+    </div>
+
+    <!-- === Analytics: Category & Store Summaries + Price Trend === -->
+    <div class="report-section" id="analyticsSection">
+      <h2>Analytics</h2>
+
+      <div class="inline-controls">
+        <label for="analyticsYear"><strong>Year:</strong></label>
+        <select id="analyticsYear"></select>
+
+        <label for="priceTrendKey"><strong>Price trend item:</strong></label>
+        <select id="priceTrendKey" style="min-width:260px;"></select>
+      </div>
+
+      <h3 style="margin-top:20px;">Spend by Category (Monthly + Year Total)</h3>
+      <div class="scroll-x">
+        <table id="categorySpendTable">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>Jan</th><th>Feb</th><th>Mar</th><th>Apr</th><th>May</th><th>Jun</th>
+              <th>Jul</th><th>Aug</th><th>Sep</th><th>Oct</th><th>Nov</th><th>Dec</th>
+              <th>Year Total</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:24px;">Store Summary (Year)</h3>
+      <div class="scroll-x">
+        <table id="storeSummaryTable">
+          <thead>
+            <tr>
+              <th>Store</th>
+              <th>Total Spend</th>
+              <th># Trips</th>
+              <th>Avg Basket</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <h3 style="margin-top:24px;">Price Trend</h3>
+      <canvas id="priceTrendChart" height="120"></canvas>
+    </div>
+  </div>
+
+  <!-- Chart.js + date adapter (required for time scale) -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.umd.min.js"></script>
+  <!-- IndexedDB helper -->
+  <script src="https://cdn.jsdelivr.net/npm/idb-keyval@6/dist/idb-keyval.iife.min.js"></script>
+
+  <script>
+    // ----- Elements -----
+    const transactionForm = document.getElementById('transactionForm');
+    const itemForm = document.getElementById('itemForm');
+    const groceryTableBody = document.querySelector('#groceryTable tbody');
+    const storesDatalist = document.getElementById('stores-list');
+    const paymentsDatalist = document.getElementById('payments-list');
+    const brandsDatalist = document.getElementById('brands-list');
+    const categoriesDatalist = document.getElementById('categories-list');
+    const currentTransactionDisplay = document.getElementById('current-transaction-display');
+    const priceHistorySection = document.getElementById('priceHistory');
+    const historyItemName = document.getElementById('historyItemName');
+    const historyList = document.getElementById('historyList');
+    const monthlyTotalEl = document.getElementById('monthlyTotal');
+    const yearlyTotalEl = document.getElementById('yearlyTotal');
+    const importFileEl = document.getElementById('importFile');
+    const importBtn = document.getElementById('importBtn');
+    const exportBtn = document.getElementById('exportBtn');
+    const finishBtn = document.getElementById('finishBtn');
+    const backupBtn = document.getElementById('backupBtn');
+    const backupStatus = document.getElementById('backupStatus');
+
+    // Analytics elements
+    const analyticsYearEl = document.getElementById('analyticsYear');
+    const categorySpendTableBody = document.querySelector('#categorySpendTable tbody');
+    const storeSummaryTableBody = document.querySelector('#storeSummaryTable tbody');
+    const priceTrendKeyEl = document.getElementById('priceTrendKey');
+    const priceTrendCanvas = document.getElementById('priceTrendChart');
+
+    let priceTrendChart = null;
+
+    // ----- State in memory -----
+    let transactions = [];
+    let currentTransaction = null;
+
+    let stores = new Set();
+    let paymentMethods = new Set();
+    let brands = new Set();
+    let categories = new Set();
+
+    // ----- IndexedDB via idb-keyval -----
+    const { get, set, del } = idbKeyval;
+
+    async function persistStorage() {
+      if (navigator.storage?.persist) {
+        try {
+          const granted = await navigator.storage.persist();
+          console.log('Storage persistence:', granted);
+        } catch {}
+      }
+    }
+
+    async function loadAll() {
+      transactions     = (await get('transactions'))     || [];
+      stores           = new Set((await get('stores'))   || []);
+      paymentMethods   = new Set((await get('paymentMethods')) || []);
+      brands           = new Set((await get('brands'))   || []);
+      categories       = new Set((await get('categories')) || []);
+    }
+
+    async function saveAll() {
+      await set('transactions', transactions);
+      await set('stores', [...stores]);
+      await set('paymentMethods', [...paymentMethods]);
+      await set('brands', [...brands]);
+      await set('categories', [...categories]);
+    }
+
+    // ----- Optional: auto-backup to a chosen file -----
+    let backupHandle = null;
+
+    async function loadBackupHandle() {
+      try {
+        backupHandle = await get('backupHandle');
+        if (backupHandle) backupStatus.textContent = 'Auto-backup: enabled';
+      } catch {
+        backupHandle = null;
+      }
+    }
+
+    function fileAccessSupported() {
+      return !!(window.showSaveFilePicker);
+    }
+
+    async function chooseBackupFile() {
+      if (!fileAccessSupported()) {
+        alert('Your browser does not support auto-backup (File System Access API). Try Chrome or Edge.');
+        return;
+      }
+      try {
+        backupHandle = await window.showSaveFilePicker({
+          suggestedName: 'grocery-data.json',
+          types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }],
+        });
+        await set('backupHandle', backupHandle);
+        backupStatus.textContent = 'Auto-backup: enabled';
+        // Immediately write current snapshot
+        await writeBackup();
+      } catch (e) {
+        console.warn('Backup file not selected:', e);
+      }
+    }
+
+    async function writeBackup() {
+      try {
+        if (!backupHandle) return;
+        const writable = await backupHandle.createWritable();
+        await writable.write(JSON.stringify(transactions, null, 2));
+        await writable.close();
+      } catch (e) {
+        console.warn('Backup write failed (perhaps permission revoked):', e);
+        backupStatus.textContent = 'Auto-backup: permission needed';
+      }
+    }
+
+    // ----- Render helpers -----
+    function saveDataAndRender() {
+      // batch persistence; then render + backup
+      saveAll().then(writeBackup).finally(() => {
+        renderTable();
+        renderReports();
+        renderAnalytics();
+      });
+    }
+
+    function renderTable() {
+      groceryTableBody.innerHTML = '';
+      transactions.sort((a, b) => new Date(b.date) - new Date(a.date));
+
+      transactions.forEach(transaction => {
+        const total = (transaction.items || []).reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+        const headerRow = groceryTableBody.insertRow();
+        headerRow.classList.add('transaction-header');
+        headerRow.dataset.transactionId = String(transaction.id);
+        headerRow.innerHTML = `
+          <td>${escapeHtml(transaction.store)}</td>
+          <td>${escapeHtml(transaction.date)}</td>
+          <td>${escapeHtml(transaction.paymentMethod)}</td>
+          <td>$${total.toFixed(2)}</td>
+        `;
+        headerRow.addEventListener('click', () => {
+          const itemRows = document.querySelectorAll(".item-row[data-parent-id='" + transaction.id + "']");
+          itemRows.forEach(row => {
+            row.style.display = row.style.display === 'table-row' ? 'none' : 'table-row';
+          });
+        });
+
+        (transaction.items || []).forEach(item => {
+          const itemRow = groceryTableBody.insertRow();
+          itemRow.classList.add('item-row');
+          itemRow.dataset.parentId = String(transaction.id);
+          itemRow.dataset.itemId = String(item.id);
+          const details = `
+            <span class="item-pill">${escapeHtml(item.item)}</span>
+            <span class="item-pill">${escapeHtml(item.brand)}</span>
+            <span class="item-pill">${escapeHtml(item.category)}</span>
+            <span class="item-pill">${escapeHtml(item.size)}</span>
+            <span class="item-pill">$${Number(item.price).toFixed(2)}</span>
+          `;
+          itemRow.innerHTML = `<td colspan="4">↳ ${details}</td>`;
+          itemRow.addEventListener('click', () => showPriceHistory(item));
+        });
+      });
+    }
+
+    function renderDatalists() {
+      storesDatalist.innerHTML = '';
+      paymentsDatalist.innerHTML = '';
+      brandsDatalist.innerHTML = '';
+      categoriesDatalist.innerHTML = '';
+
+      stores.forEach(store => addOption(storesDatalist, store));
+      paymentMethods.forEach(pm => addOption(paymentsDatalist, pm));
+      brands.forEach(b => addOption(brandsDatalist, b));
+      categories.forEach(c => addOption(categoriesDatalist, c));
+    }
+
+    function renderReports() {
+      const now = new Date();
+      const currentMonth = now.getMonth();
+      const currentYear = now.getFullYear();
+
+      let monthlyTotal = 0;
+      let yearlyTotal = 0;
+
+      transactions.forEach(transaction => {
+        const entryDate = new Date(transaction.date);
+        if (entryDate.getFullYear() === currentYear) {
+          (transaction.items || []).forEach(item => {
+            const p = Number(item.price) || 0;
+            yearlyTotal += p;
+            if (entryDate.getMonth() === currentMonth) {
+              monthlyTotal += p;
+            }
+          });
+        }
+      });
+
+      monthlyTotalEl.textContent = `$${monthlyTotal.toFixed(2)}`;
+      yearlyTotalEl.textContent = `$${yearlyTotal.toFixed(2)}`;
+    }
+
+    function showPriceHistory(item) {
+      const allHistory = [];
+      transactions.forEach(transaction => {
+        (transaction.items || []).forEach(histItem => {
+          if (histItem.item === item.item && histItem.brand === item.brand && histItem.size === item.size) {
+            allHistory.push({
+              date: transaction.date,
+              price: Number(histItem.price) || 0
+            });
+          }
+        });
+      });
+      allHistory.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+      historyItemName.textContent = `${item.item} (${item.brand}, ${item.size})`;
+      historyList.innerHTML = '';
+      allHistory.forEach(hist => {
+        const li = document.createElement('li');
+        li.textContent = `Date: ${hist.date} - Price: $${hist.price.toFixed(2)}`;
+        historyList.appendChild(li);
+      });
+      priceHistorySection.style.display = 'block';
+    }
+
+    function finishTransaction() {
+      if (currentTransaction) {
+        const idx = transactions.findIndex(t => t.id === currentTransaction.id);
+        if (idx > -1 && (transactions[idx].items || []).length === 0) {
+          transactions.splice(idx, 1);
+          saveDataAndRender();
+        }
+      }
+      currentTransaction = null;
+      document.getElementById('transaction-form-section').classList.remove('hidden');
+      document.getElementById('item-form-section').classList.add('hidden');
+      transactionForm.reset();
+    }
+
+    // ----- Analytics -----
+    function getAllYearsInData() {
+      const years = new Set();
+      transactions.forEach(t => {
+        if (t && t.date) {
+          const y = new Date(t.date).getFullYear();
+          if (!isNaN(y)) years.add(y);
+        }
+      });
+      years.add(new Date().getFullYear());
+      return Array.from(years).sort((a,b) => a - b);
+    }
+
+    function populateYearSelector() {
+      const years = getAllYearsInData();
+      analyticsYearEl.innerHTML = '';
+      years.forEach(y => {
+        const opt = document.createElement('option');
+        opt.value = String(y);
+        opt.textContent = String(y);
+        analyticsYearEl.appendChild(opt);
+      });
+      const currentYear = new Date().getFullYear();
+      analyticsYearEl.value = years.includes(currentYear) ? String(currentYear) : String(years[years.length - 1]);
+    }
+
+    function keyForItem(item) {
+      return `${item.item} | ${item.brand} | ${item.size}`.trim();
+    }
+
+    function populatePriceTrendSelector() {
+      const keys = new Set();
+      transactions.forEach(t => (t.items || []).forEach(i => {
+        if (i && i.item && i.brand && i.size) keys.add(keyForItem(i));
+      }));
+      const sorted = Array.from(keys).sort((a,b) => a.localeCompare(b));
+      priceTrendKeyEl.innerHTML = '';
+      sorted.forEach(k => {
+        const opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = k;
+        priceTrendKeyEl.appendChild(opt);
+      });
+    }
+
+    function computeCategoryMatrix(year) {
+      const matrix = {};
+      transactions.forEach(t => {
+        const d = new Date(t.date);
+        if (d.getFullYear() !== year) return;
+        const m = d.getMonth();
+        (t.items || []).forEach(i => {
+          const cat = (i.category || 'Uncategorized').trim() || 'Uncategorized';
+          if (!matrix[cat]) matrix[cat] = Array(12).fill(0);
+          matrix[cat][m] += Number(i.price) || 0;
+        });
+      });
+      const result = Object.entries(matrix).map(([cat, months]) => {
+        const total = months.reduce((a,b) => a + b, 0);
+        return { category: cat, months, total };
+      });
+      result.sort((a,b) => b.total - a.total);
+      return result;
+    }
+
+    function renderCategorySpend(year) {
+      const rows = computeCategoryMatrix(year);
+      categorySpendTableBody.innerHTML = '';
+      rows.forEach(row => {
+        const tr = document.createElement('tr');
+        const cells = [
+          row.category,
+          ...row.months.map(v => `$${v.toFixed(2)}`),
+          `$${row.total.toFixed(2)}`
+        ];
+        cells.forEach((c, idx) => {
+          const td = document.createElement('td');
+          td.textContent = c;
+          if (idx === 0 || idx === cells.length - 1) td.style.fontWeight = '600';
+          tr.appendChild(td);
+        });
+        categorySpendTableBody.appendChild(tr);
+      });
+    }
+
+    function renderStoreSummary(year) {
+      const perStore = {};
+      transactions.forEach(t => {
+        const d = new Date(t.date);
+        if (d.getFullYear() !== year) return;
+        const store = (t.store || 'Unknown').trim() || 'Unknown';
+        const spend = (t.items || []).reduce((s,i) => s + (Number(i.price) || 0), 0);
+        if (!perStore[store]) perStore[store] = { spend: 0, trips: 0 };
+        perStore[store].spend += spend;
+        perStore[store].trips += 1;
+      });
+      const rows = Object.entries(perStore).map(([store, v]) => {
+        const avg = v.trips ? (v.spend / v.trips) : 0;
+        return { store, spend: v.spend, trips: v.trips, avg };
+      }).sort((a,b) => b.spend - a.spend);
+
+      storeSummaryTableBody.innerHTML = '';
+      rows.forEach(r => {
+        const tr = document.createElement('tr');
+        [
+          r.store,
+          `$${r.spend.toFixed(2)}`,
+          String(r.trips),
+          `$${r.avg.toFixed(2)}`
+        ].forEach(txt => {
+          const td = document.createElement('td');
+          td.textContent = txt;
+          tr.appendChild(td);
+        });
+        storeSummaryTableBody.appendChild(tr);
+      });
+    }
+
+    function buildPriceSeriesForKey(key) {
+      const [name, brand, size] = key.split('|').map(s => s.trim());
+      const points = [];
+      transactions.forEach(t => {
+        (t.items || []).forEach(i => {
+          if (i.item === name && i.brand === brand && i.size === size) {
+            points.push({ x: new Date(t.date), y: Number(i.price) || 0 });
+          }
+        });
+      });
+      points.sort((a,b) => a.x - b.x);
+      return points;
+    }
+
+    function renderPriceTrendChart() {
+      const key = priceTrendKeyEl.value;
+      if (!key) {
+        if (priceTrendChart) priceTrendChart.destroy();
+        return;
+      }
+      const data = buildPriceSeriesForKey(key);
+      if (priceTrendChart) priceTrendChart.destroy();
+      priceTrendChart = new Chart(priceTrendCanvas, {
+        type: 'line',
+        data: { datasets: [{ label: key, data, tension: 0.2, pointRadius: 3 }] },
+        options: {
+          parsing: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: (ctx) => `$${(ctx.raw?.y ?? 0).toFixed(2)}` } }
+          },
+          scales: {
+            x: { type: 'time', time: { unit: 'month' }, title: { display: true, text: 'Date' } },
+            y: { title: { display: true, text: 'Price' }, beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function renderAnalytics() {
+      populateYearSelector();
+      populatePriceTrendSelector();
+      const year = Number(analyticsYearEl.value);
+      renderCategorySpend(year);
+      renderStoreSummary(year);
+      renderPriceTrendChart();
+    }
+
+    // ----- Utilities -----
+    function addOption(datalistEl, value) {
+      const opt = document.createElement('option');
+      opt.value = value;
+      datalistEl.appendChild(opt);
+    }
+
+    function escapeHtml(str) {
+      return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ----- Events -----
+    transactionForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const formData = new FormData(transactionForm);
+      currentTransaction = {
+        id: Date.now(),
+        store: String(formData.get('store') || '').trim(),
+        date: String(formData.get('date') || ''),
+        paymentMethod: String(formData.get('paymentMethod') || '').trim(),
+        items: []
+      };
+      if (currentTransaction.store) stores.add(currentTransaction.store);
+      if (currentTransaction.paymentMethod) paymentMethods.add(currentTransaction.paymentMethod);
+      renderDatalists();
+
+      const label = `${currentTransaction.store} on ${currentTransaction.date}`;
+      document.getElementById('transaction-form-section').classList.add('hidden');
+      document.getElementById('item-form-section').classList.remove('hidden');
+      document.getElementById('current-transaction-display').textContent = label;
+      itemForm.reset();
+    });
+
+    itemForm.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (!currentTransaction) { alert('Please create a shopping list first.'); return; }
+      const formData = new FormData(itemForm);
+      const newItem = {
+        id: Date.now(),
+        item: String(formData.get('item') || '').trim(),
+        brand: String(formData.get('brand') || '').trim(),
+        category: String(formData.get('category') || '').trim(),
+        size: String(formData.get('size') || '').trim(),
+        price: parseFloat(String(formData.get('price') || '0'))
+      };
+
+      if (!transactions.some(t => t.id === currentTransaction.id)) {
+        transactions.push(currentTransaction); // push parent on first item add
+      }
+      currentTransaction.items.push(newItem);
+      if (newItem.brand) brands.add(newItem.brand);
+      if (newItem.category) categories.add(newItem.category);
+
+      saveDataAndRender();
+      renderDatalists();
+      itemForm.reset();
+    });
+
+    document.getElementById('finishBtn').addEventListener('click', finishTransaction);
+
+    exportBtn.addEventListener('click', () => {
+      const dataStr = JSON.stringify(transactions, null, 2);
+      const blob = new Blob([dataStr], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `grocery_data_${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    });
+
+    importBtn.addEventListener('click', () => importFileEl.click());
+
+    importFileEl.addEventListener('change', async (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const importedData = JSON.parse(text);
+        if (Array.isArray(importedData)) {
+          transactions = importedData;
+          stores = new Set(importedData.map(t => t.store).filter(Boolean));
+          paymentMethods = new Set(importedData.map(t => t.paymentMethod).filter(Boolean));
+          brands = new Set(importedData.flatMap(t => (t.items || []).map(i => i.brand).filter(Boolean)));
+          categories = new Set(importedData.flatMap(t => (t.items || []).map(i => i.category).filter(Boolean)));
+          saveDataAndRender();
+          renderDatalists();
+          alert('Data imported successfully!');
+        } else {
+          alert('Invalid JSON file format. Please import a JSON array.');
+        }
+      } catch {
+        alert('Failed to parse JSON file. Please check the file format.');
+      }
+    });
+
+    // Auto-backup
+    backupBtn.addEventListener('click', chooseBackupFile);
+
+    // Analytics events
+    analyticsYearEl.addEventListener('change', () => {
+      const year = Number(analyticsYearEl.value);
+      renderCategorySpend(year);
+      renderStoreSummary(year);
+    });
+    priceTrendKeyEl.addEventListener('change', renderPriceTrendChart);
+
+    // ----- PWA registration -----
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./service-worker.js').catch(err => {
+          console.warn('SW registration failed:', err);
+        });
+      });
+    }
+
+    // ----- Init -----
+    (async function init() {
+      await persistStorage();
+      await loadAll();
+      await loadBackupHandle();
+
+      const today = new Date().toISOString().split('T')[0];
+      const dateEl = document.getElementById('transactionDate');
+      if (dateEl) dateEl.value = today;
+
+      renderTable();
+      renderDatalists();
+      renderReports();
+      renderAnalytics();
+
+      if (!fileAccessSupported()) {
+        backupBtn.disabled = true;
+        backupBtn.title = 'Not supported in this browser';
+      }
+    })();
+  </script>
+</body>
+</html>
